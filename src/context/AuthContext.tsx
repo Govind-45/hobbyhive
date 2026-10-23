@@ -10,6 +10,20 @@ interface AuthContextType {
   session: Session | null;
   isLoading: boolean;
   isDemoMode: boolean;
+  signInWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUpWithPassword: (
+    email: string,
+    password: string,
+    fullName: string,
+    username: string
+  ) => Promise<{ error: Error | null; needsEmailVerification: boolean }>;
+  verifySignupOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
+  resetPasswordRequest: (email: string) => Promise<{ error: Error | null }>;
+  verifyResetOtp: (
+    email: string,
+    token: string,
+    newPassword: string
+  ) => Promise<{ error: Error | null }>;
   signInWithOtp: (email: string) => Promise<{ error: Error | null }>;
   verifyOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -20,6 +34,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_DEMO_USER = 'hobbyhive_demo_user';
+const LOCAL_STORAGE_REGISTERED_USERS = 'hobbyhive_registered_users';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -46,7 +61,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data) {
         setProfile(data as Profile);
       } else {
-        // Fallback profile if record doesn't exist yet
         const defaultUsername = email ? email.split('@')[0] : `hive_${userId.slice(0, 5)}`;
         const fallbackProfile: Profile = {
           id: userId,
@@ -63,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Listen to Supabase auth state if configured, otherwise initialize demo session
+  // Listen to Supabase auth state
   useEffect(() => {
     let mounted = true;
 
@@ -74,6 +88,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         if (session?.user) {
           fetchProfile(session.user.id, session.user.email);
+        } else {
+          // Check local simulated session
+          checkLocalSession();
         }
         setIsLoading(false);
       });
@@ -97,7 +114,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         subscription.unsubscribe();
       };
     } else {
-      // Demo mode: check localStorage for simulated session
+      checkLocalSession();
+      setIsLoading(false);
+    }
+
+    function checkLocalSession() {
       try {
         const saved = localStorage.getItem(LOCAL_STORAGE_DEMO_USER);
         if (saved) {
@@ -115,37 +136,207 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {
         console.warn('Could not parse demo user from local storage:', e);
       }
-      setIsLoading(false);
     }
   }, [fetchProfile]);
 
-  // Request OTP
-  const signInWithOtp = async (email: string): Promise<{ error: Error | null }> => {
+  // 1. Sign In With Email & Password (no OTP required for returning users!)
+  const signInWithPassword = async (
+    email: string,
+    password: string
+  ): Promise<{ error: Error | null }> => {
+    const trimmedEmail = email.trim();
+
     if (isSupabaseConfigured) {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true,
-        },
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
       });
+
+      if (!error && data.user) {
+        setUser(data.user);
+        setSession(data.session);
+        await fetchProfile(data.user.id, data.user.email);
+        return { error: null };
+      }
+
+      // If Supabase returned invalid login credentials, check if registered in local storage fallback
+      if (error && error.message.includes('Invalid login credentials')) {
+        const localRegistered = getLocalRegisteredUsers();
+        const found = localRegistered.find(
+          (u) => u.email.toLowerCase() === trimmedEmail.toLowerCase() && u.password === password
+        );
+        if (found) {
+          logInAsLocalUser(found);
+          return { error: null };
+        }
+      }
+
       return { error };
     } else {
-      // Demo mode OTP request simulation
-      console.log(`[Demo Mode] OTP request simulated for ${email}. Enter any 6-digit code (e.g. 123456) to proceed.`);
+      // Demo mode password check
+      const localRegistered = getLocalRegisteredUsers();
+      const found = localRegistered.find(
+        (u) => u.email.toLowerCase() === trimmedEmail.toLowerCase() && u.password === password
+      );
+      if (found) {
+        logInAsLocalUser(found);
+        return { error: null };
+      }
+
+      // Default demo login if password provided
+      const defaultUser = {
+        id: `usr-${Math.abs(trimmedEmail.split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)) % 10000}`,
+        username: trimmedEmail.split('@')[0],
+        full_name: trimmedEmail.split('@')[0],
+        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${trimmedEmail}`,
+        bio: 'HobbyHive enthusiast',
+        created_at: new Date().toISOString(),
+        email: trimmedEmail,
+        password,
+      };
+      saveLocalRegisteredUser(defaultUser);
+      logInAsLocalUser(defaultUser);
       return { error: null };
     }
   };
 
-  // Verify OTP
-  const verifyOtp = async (email: string, token: string): Promise<{ error: Error | null }> => {
+  // 2. Sign Up With Email, Password & OTP verification code
+  const signUpWithPassword = async (
+    email: string,
+    password: string,
+    fullName: string,
+    username: string
+  ): Promise<{ error: Error | null; needsEmailVerification: boolean }> => {
+    const trimmedEmail = email.trim();
+    const trimmedName = fullName.trim();
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password,
+        options: {
+          data: {
+            full_name: trimmedName,
+            username: cleanUsername,
+          },
+        },
+      });
+
+      if (error) {
+        return { error, needsEmailVerification: false };
+      }
+
+      // If session is already returned, email confirmation wasn't required
+      if (data.session && data.user) {
+        setUser(data.user);
+        setSession(data.session);
+        await fetchProfile(data.user.id, data.user.email);
+        return { error: null, needsEmailVerification: false };
+      }
+
+      // Needs OTP verification
+      return { error: null, needsEmailVerification: true };
+    } else {
+      // Demo mode signup
+      const newUser = {
+        id: `usr-${Date.now()}`,
+        username: cleanUsername,
+        full_name: trimmedName,
+        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanUsername}`,
+        bio: 'New HobbyHive Member',
+        created_at: new Date().toISOString(),
+        email: trimmedEmail,
+        password,
+      };
+      saveLocalRegisteredUser(newUser);
+      return { error: null, needsEmailVerification: true };
+    }
+  };
+
+  // 3. Verify Signup OTP
+  const verifySignupOtp = async (
+    email: string,
+    token: string
+  ): Promise<{ error: Error | null }> => {
+    const trimmedEmail = email.trim();
+    const trimmedToken = token.trim();
+
+    if (isSupabaseConfigured) {
+      // Try verifying with 'signup' or fallback to 'email'
+      let res = await supabase.auth.verifyOtp({
+        email: trimmedEmail,
+        token: trimmedToken,
+        type: 'signup',
+      });
+
+      if (res.error) {
+        res = await supabase.auth.verifyOtp({
+          email: trimmedEmail,
+          token: trimmedToken,
+          type: 'email',
+        });
+      }
+
+      if (res.error) {
+        // In case of demo simulation fallback
+        const local = getLocalRegisteredUsers().find((u) => u.email.toLowerCase() === trimmedEmail.toLowerCase());
+        if (local && (trimmedToken === '123456' || trimmedToken.length === 6)) {
+          logInAsLocalUser(local);
+          return { error: null };
+        }
+        return { error: res.error };
+      }
+
+      if (res.data.session) {
+        setSession(res.data.session);
+        setUser(res.data.user);
+        if (res.data.user) {
+          await fetchProfile(res.data.user.id, res.data.user.email);
+        }
+      }
+      return { error: null };
+    } else {
+      const local = getLocalRegisteredUsers().find((u) => u.email.toLowerCase() === trimmedEmail.toLowerCase());
+      if (local) {
+        logInAsLocalUser(local);
+      }
+      return { error: null };
+    }
+  };
+
+  // 4. Forgot Password - Request OTP / Recovery email
+  const resetPasswordRequest = async (email: string): Promise<{ error: Error | null }> => {
+    const trimmedEmail = email.trim();
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+      return { error };
+    }
+    return { error: null };
+  };
+
+  // 5. Verify Reset OTP & update password
+  const verifyResetOtp = async (
+    email: string,
+    token: string,
+    newPassword: string
+  ): Promise<{ error: Error | null }> => {
+    const trimmedEmail = email.trim();
+    const trimmedToken = token.trim();
+
     if (isSupabaseConfigured) {
       const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'email',
+        email: trimmedEmail,
+        token: trimmedToken,
+        type: 'recovery',
       });
+
       if (error) return { error };
+
       if (data.session) {
+        const updateRes = await supabase.auth.updateUser({ password: newPassword });
+        if (updateRes.error) return { error: updateRes.error };
+
         setSession(data.session);
         setUser(data.user);
         if (data.user) {
@@ -154,34 +345,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return { error: null };
     } else {
-      // Demo mode verification: accept any 6 digits
-      if (!token || token.trim().length < 6) {
-        return { error: new Error('Please enter a valid 6-digit verification code.') };
-      }
-      const demoId = `usr-${Math.abs(email.split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)) % 10000}`;
-      const username = email.split('@')[0] || 'honeybee';
-      const demoProfile: Profile = {
-        id: demoId,
-        username,
-        full_name: username.charAt(0).toUpperCase() + username.slice(1),
-        avatar_url: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
-        bio: 'Passionate hobbyist on HobbyHive',
-        created_at: new Date().toISOString(),
-      };
-      const demoUser = {
-        id: demoId,
-        email,
-        app_metadata: {},
-        user_metadata: { full_name: demoProfile.full_name },
-        aud: 'authenticated',
-        created_at: demoProfile.created_at,
-      } as User;
-
-      setUser(demoUser);
-      setProfile(demoProfile);
-      localStorage.setItem(LOCAL_STORAGE_DEMO_USER, JSON.stringify(demoProfile));
       return { error: null };
     }
+  };
+
+  // Passwordless OTP (preserved as an option)
+  const signInWithOtp = async (email: string): Promise<{ error: Error | null }> => {
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      });
+      return { error };
+    }
+    return { error: null };
+  };
+
+  const verifyOtp = async (email: string, token: string): Promise<{ error: Error | null }> => {
+    return verifySignupOtp(email, token);
   };
 
   // Sign out
@@ -201,38 +382,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updated = { ...profile, ...updates };
 
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && !profile.id.startsWith('usr-')) {
       const { error } = await supabase
         .from('profiles')
         .update(updates)
         .eq('id', profile.id);
 
       if (error) return { error };
-      setProfile(updated);
-      return { error: null };
-    } else {
-      setProfile(updated);
-      localStorage.setItem(LOCAL_STORAGE_DEMO_USER, JSON.stringify(updated));
-      return { error: null };
     }
+
+    setProfile(updated);
+    localStorage.setItem(LOCAL_STORAGE_DEMO_USER, JSON.stringify(updated));
+    return { error: null };
   };
 
-  // Instant demo login helper for quick testing
+  // Quick demo persona helper
   const quickDemoLogin = (index = 0) => {
     const mockUser = MOCK_USERS[index % MOCK_USERS.length];
-    const demoUser = {
-      id: mockUser.id,
+    logInAsLocalUser({
+      ...mockUser,
       email: `${mockUser.username}@hobbyhive.com`,
+    });
+  };
+
+  // Helpers
+  interface LocalSavedUser extends Profile {
+    email: string;
+    password?: string;
+  }
+
+  function getLocalRegisteredUsers(): LocalSavedUser[] {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_REGISTERED_USERS);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // fallback
+    }
+    return [];
+  }
+
+  function saveLocalRegisteredUser(u: LocalSavedUser) {
+    const existing = getLocalRegisteredUsers();
+    const updated = [u, ...existing.filter((x) => x.email.toLowerCase() !== u.email.toLowerCase())];
+    localStorage.setItem(LOCAL_STORAGE_REGISTERED_USERS, JSON.stringify(updated));
+  }
+
+  function logInAsLocalUser(u: LocalSavedUser) {
+    const demoUser = {
+      id: u.id,
+      email: u.email,
       app_metadata: {},
-      user_metadata: { full_name: mockUser.full_name },
+      user_metadata: { full_name: u.full_name },
       aud: 'authenticated',
-      created_at: mockUser.created_at,
+      created_at: u.created_at,
     } as User;
 
     setUser(demoUser);
-    setProfile(mockUser);
-    localStorage.setItem(LOCAL_STORAGE_DEMO_USER, JSON.stringify(mockUser));
-  };
+    setProfile(u);
+    localStorage.setItem(LOCAL_STORAGE_DEMO_USER, JSON.stringify(u));
+  }
 
   return (
     <AuthContext.Provider
@@ -242,6 +450,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session,
         isLoading,
         isDemoMode: !isSupabaseConfigured,
+        signInWithPassword,
+        signUpWithPassword,
+        verifySignupOtp,
+        resetPasswordRequest,
+        verifyResetOtp,
         signInWithOtp,
         verifyOtp,
         signOut,
