@@ -19,7 +19,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const { signInWithOtp, verifyOtp, quickDemoLogin, isDemoMode } = useAuth();
+  const { user, signInWithOtp, verifyOtp, quickDemoLogin, isDemoMode } = useAuth();
 
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [email, setEmail] = useState('');
@@ -28,6 +28,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [resendCountdown, setResendCountdown] = useState(30);
+
+  // Auto-close modal when user signs in (e.g. from clicking email link)
+  useEffect(() => {
+    if (user && isOpen) {
+      onClose();
+    }
+  }, [user, isOpen, onClose]);
 
   // Reset state on open/close
   useEffect(() => {
@@ -89,7 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     if (isDemoMode) {
       setSuccessNotice('Demo code: Enter any 6 digits (e.g. 123456) to sign in!');
     } else {
-      setSuccessNotice(`A 6-digit login code has been sent to ${trimmedEmail}`);
+      setSuccessNotice(`Sign-in link sent to ${trimmedEmail}! Click "Sign in" in your email to log in instantly.`);
     }
   };
 
@@ -207,9 +214,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           ) : (
             /* Step 2: OTP Verification Form */
             <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="p-3 bg-hive-50/80 border border-hive-200/80 rounded-xl text-xs text-hive-900 leading-relaxed">
+                ✨ <strong>Check your email:</strong> Click the blue <strong>"Sign in"</strong> button in your email to log in instantly, or enter the 6-digit code below.
+              </div>
+
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-warmgray-500 mb-1.5">
-                  6-Digit Verification Code
+                  6-Digit Verification Code (Optional if clicking email link)
                 </label>
                 <div className="relative">
                   <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-warmgray-400 pointer-events-none" />
