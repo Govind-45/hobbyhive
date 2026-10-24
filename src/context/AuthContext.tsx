@@ -224,6 +224,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
+        // "User already registered" — try signing them in instead
+        if (
+          error.message?.toLowerCase().includes('already registered') ||
+          error.message?.toLowerCase().includes('already been registered') ||
+          error.message?.toLowerCase().includes('user already exists')
+        ) {
+          const signInRes = await supabase.auth.signInWithPassword({
+            email: trimmedEmail,
+            password,
+          });
+          if (!signInRes.error && signInRes.data.user) {
+            setUser(signInRes.data.user);
+            setSession(signInRes.data.session);
+            await fetchProfile(signInRes.data.user.id, signInRes.data.user.email);
+            return { error: null, needsEmailVerification: false };
+          }
+          return {
+            error: new Error('This email is already registered. Please sign in instead.'),
+            needsEmailVerification: false,
+          };
+        }
+
+        // Email send failure (rate limit / SMTP not configured)
+        if (
+          error.message?.toLowerCase().includes('sending confirmation') ||
+          error.message?.toLowerCase().includes('smtp') ||
+          error.message?.toLowerCase().includes('email') ||
+          error.status === 500
+        ) {
+          return {
+            error: new Error(
+              'Could not send confirmation email. Please ask the site admin to configure email, or try again later.'
+            ),
+            needsEmailVerification: false,
+          };
+        }
+
         return { error, needsEmailVerification: false };
       }
 
@@ -235,7 +272,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: null, needsEmailVerification: false };
       }
 
-      // Needs OTP verification
+      // User created but needs email verification (OTP sent)
       return { error: null, needsEmailVerification: true };
     } else {
       // Demo mode signup
