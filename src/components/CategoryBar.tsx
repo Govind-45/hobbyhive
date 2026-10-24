@@ -16,38 +16,44 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
   onSelectCategory,
 }) => {
   return (
-    <div className="w-full">
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none no-scrollbar py-1">
-        {/* All Hobbies button */}
+    <div className="relative w-full">
+      <div className="flex items-center gap-2.5 overflow-x-auto pb-2 scrollbar-none no-scrollbar py-1.5 px-0.5">
+        {/* All Discussions Pill */}
         <button
           onClick={() => onSelectCategory('all')}
-          className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border ${
+          className={`shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 border ${
             selectedCategory === 'all'
-              ? 'bg-warmgray-900 text-white border-warmgray-900 shadow-sm'
-              : 'bg-white text-warmgray-600 border-warmgray-200 hover:border-warmgray-300 hover:bg-warmgray-50'
+              ? 'bg-warmgray-900 text-white border-warmgray-900 shadow-md shadow-warmgray-900/20 scale-102'
+              : 'bg-white/90 hover:bg-white text-warmgray-600 border-warmgray-200/90 hover:border-warmgray-300 hover:shadow-xs'
           }`}
         >
           <Layers className="w-4 h-4" />
           <span>All Discussions</span>
         </button>
 
-        {/* Individual Category buttons */}
+        {/* Individual Category Pills */}
         {categories.map((cat) => {
           const isSelected = selectedCategory === cat.slug;
           return (
             <button
               key={cat.id}
               onClick={() => onSelectCategory(cat.slug)}
-              className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border ${
+              className={`shrink-0 group inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 border ${
                 isSelected
-                  ? 'bg-hive-600 text-white border-hive-600 shadow-sm shadow-hive-600/20'
-                  : 'bg-white text-warmgray-700 border-warmgray-200 hover:border-warmgray-300 hover:bg-warmgray-50'
+                  ? 'bg-gradient-to-r from-hive-600 to-amber-600 text-white border-hive-600 shadow-md shadow-hive-600/30 scale-102'
+                  : 'bg-white/90 hover:bg-white text-warmgray-700 border-warmgray-200/90 hover:border-hive-300 hover:shadow-xs hover:-translate-y-0.5'
               }`}
             >
-              <CategoryIcon
-                name={cat.icon}
-                className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-hive-600'}`}
-              />
+              <div
+                className={`p-1 rounded-lg transition-transform group-hover:scale-110 ${
+                  isSelected ? 'bg-white/20' : 'bg-warmgray-100'
+                }`}
+              >
+                <CategoryIcon
+                  name={cat.icon}
+                  className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-hive-600'}`}
+                />
+              </div>
               <span>{cat.name}</span>
             </button>
           );

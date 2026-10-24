@@ -45,8 +45,9 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [likeAnimating, setLikeAnimating] = useState(false);
 
-  // Load comments when modal opens for a post
+  // Load comments
   useEffect(() => {
     if (!isOpen || !post) return;
 
@@ -69,7 +70,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
     };
   }, [isOpen, post]);
 
-  // Handle escape key
+  // Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -85,11 +86,19 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
   const isPostAuthor = user && user.id === post.user_id;
 
   const handleShare = () => {
-    navigator.clipboard.writeText(
-      `${window.location.origin}/?post=${post.id}`
-    );
+    navigator.clipboard.writeText(`${window.location.origin}/?post=${post.id}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleLike = () => {
+    if (!user) {
+      onOpenAuth();
+      return;
+    }
+    setLikeAnimating(true);
+    setTimeout(() => setLikeAnimating(false), 400);
+    onToggleLike(post);
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
@@ -142,24 +151,28 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-warmgray-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-warmgray-900/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
       <div
-        className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-warmgray-200 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+        className="bg-white/95 backdrop-blur-xl w-full max-w-3xl rounded-3xl shadow-2xl border border-warmgray-200 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="p-4 sm:p-6 border-b border-warmgray-100 flex items-center justify-between gap-4 bg-warmgray-50/70">
+        <div className="p-5 sm:p-6 border-b border-warmgray-100 flex items-center justify-between gap-4 bg-warmgray-50/80">
           <div className="flex items-center gap-3">
-            <img
-              src={
-                post.author?.avatar_url ||
-                `https://api.dicebear.com/7.x/bottts/svg?seed=${post.user_id}`
-              }
-              alt={post.author?.username || 'User'}
-              className="w-10 h-10 rounded-xl object-cover bg-warmgray-100 border border-warmgray-200"
-            />
+            <div className="relative">
+              <img
+                src={
+                  post.author?.avatar_url ||
+                  `https://api.dicebear.com/7.x/bottts/svg?seed=${post.user_id}`
+                }
+                alt={post.author?.username || 'User'}
+                className="w-11 h-11 rounded-2xl object-cover bg-warmgray-100 border-2 border-white shadow-sm ring-1 ring-warmgray-200"
+              />
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
+            </div>
+
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-bold text-warmgray-900">
                   {post.author?.full_name || post.author?.username}
                 </span>
@@ -175,14 +188,14 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
 
           <div className="flex items-center gap-2">
             {post.category && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-hive-100 text-hive-800 border border-hive-200">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200 shadow-xs">
                 <CategoryIcon name={post.category.icon} className="w-3.5 h-3.5 text-hive-600" />
                 <span>{post.category.name}</span>
               </span>
             )}
             <button
               onClick={onClose}
-              className="p-1.5 text-warmgray-400 hover:text-warmgray-700 hover:bg-warmgray-200/80 rounded-xl transition-colors"
+              className="p-2 text-warmgray-400 hover:text-warmgray-700 hover:bg-warmgray-200/80 rounded-xl transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -190,30 +203,32 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
         </div>
 
         {/* Modal Body: Scrollable Content */}
-        <div className="overflow-y-auto p-4 sm:p-8 space-y-6">
+        <div className="overflow-y-auto p-5 sm:p-8 space-y-6">
           {/* Post Title */}
-          <h1 className="text-xl sm:text-2xl font-black text-warmgray-900 tracking-tight leading-snug">
+          <h1 className="text-2xl sm:text-3xl font-black text-warmgray-900 tracking-tight leading-snug">
             {post.title}
           </h1>
 
-          {/* Post Full Content */}
+          {/* Post Content */}
           <div className="text-base text-warmgray-700 leading-relaxed whitespace-pre-line font-normal space-y-4">
             {post.content}
           </div>
 
           {/* Post Action Bar */}
-          <div className="pt-4 border-t border-warmgray-200/80 flex items-center justify-between text-xs text-warmgray-600">
+          <div className="pt-5 border-t border-warmgray-200/80 flex items-center justify-between text-xs text-warmgray-600">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => onToggleLike(post)}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition-all ${
+                onClick={handleLike}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl transition-all duration-200 border ${
                   post.is_liked
-                    ? 'bg-rose-50 text-rose-600 font-bold border border-rose-200'
-                    : 'hover:bg-warmgray-100 text-warmgray-700 border border-warmgray-200'
+                    ? 'bg-rose-50 text-rose-600 font-bold border-rose-200 shadow-sm'
+                    : 'hover:bg-warmgray-100 text-warmgray-700 border-warmgray-200/80'
                 }`}
               >
                 <Heart
-                  className={`w-4 h-4 ${
+                  className={`w-4 h-4 transition-transform duration-200 ${
+                    likeAnimating ? 'scale-130' : ''
+                  } ${
                     post.is_liked ? 'fill-rose-500 text-rose-500' : 'text-warmgray-500'
                   }`}
                 />
@@ -222,12 +237,12 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
 
               <button
                 onClick={handleShare}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl hover:bg-warmgray-100 border border-warmgray-200 transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl hover:bg-warmgray-100 border border-warmgray-200/80 transition-colors"
               >
                 {copied ? (
                   <>
                     <Check className="w-4 h-4 text-emerald-600" />
-                    <span className="text-emerald-600 font-semibold">Link Copied!</span>
+                    <span className="text-emerald-600 font-bold">Link Copied!</span>
                   </>
                 ) : (
                   <>
@@ -259,20 +274,20 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-bold text-warmgray-900 flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-hive-600" />
-                <span>Discussion ({comments.length})</span>
+                <span>Discussion Replies ({comments.length})</span>
               </h3>
             </div>
 
             {/* Comment Form */}
             {user ? (
               <form onSubmit={handleAddComment} className="mb-6">
-                <div className="bg-warmgray-50 rounded-2xl border border-warmgray-200 p-3 focus-within:border-hive-400 focus-within:ring-2 focus-within:ring-hive-400/20 transition-all">
+                <div className="bg-warmgray-50/90 rounded-2xl border border-warmgray-200 p-3.5 focus-within:border-hive-400 focus-within:ring-4 focus-within:ring-hive-400/15 transition-all">
                   <textarea
                     rows={3}
-                    placeholder="Share your thoughts, advice, or perspective..."
+                    placeholder="Share your advice, perspective, or follow-up question..."
                     value={newCommentText}
                     onChange={(e) => setNewCommentText(e.target.value)}
-                    className="w-full bg-transparent resize-none text-sm text-warmgray-800 placeholder:text-warmgray-400 focus:outline-none"
+                    className="w-full bg-transparent resize-none text-sm text-warmgray-800 placeholder:text-warmgray-400 focus:outline-none leading-relaxed"
                   />
                   <div className="flex items-center justify-between pt-2 border-t border-warmgray-200/60">
                     <span className="text-xs text-warmgray-400">
@@ -281,7 +296,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                     <button
                       type="submit"
                       disabled={isSubmittingComment || !newCommentText.trim()}
-                      className="inline-flex items-center gap-2 px-4 py-1.5 text-xs font-bold text-white bg-hive-600 hover:bg-hive-700 active:scale-95 disabled:opacity-40 disabled:pointer-events-none rounded-xl transition-all shadow-sm"
+                      className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-hive-600 to-amber-600 hover:from-hive-700 hover:to-amber-700 active:scale-95 disabled:opacity-40 disabled:pointer-events-none rounded-xl transition-all shadow-md shadow-hive-600/20"
                     >
                       {isSubmittingComment ? (
                         <>
@@ -291,7 +306,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                       ) : (
                         <>
                           <Send className="w-3.5 h-3.5" />
-                          <span>Reply</span>
+                          <span>Post Reply</span>
                         </>
                       )}
                     </button>
@@ -299,13 +314,13 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 </div>
               </form>
             ) : (
-              <div className="mb-6 p-4 rounded-2xl bg-hive-50/70 border border-hive-200/80 flex items-center justify-between flex-wrap gap-3">
-                <p className="text-xs sm:text-sm text-hive-900 font-medium">
-                  Join the conversation! Sign in with your email to add a comment.
+              <div className="mb-6 p-4 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-center justify-between flex-wrap gap-3">
+                <p className="text-xs sm:text-sm text-amber-950 font-semibold">
+                  Join the conversation! Sign in with your email to add a reply.
                 </p>
                 <button
                   onClick={onOpenAuth}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-hive-600 hover:bg-hive-700 text-white text-xs font-bold shadow-sm transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-hive-600 hover:bg-hive-700 text-white text-xs font-bold shadow-sm transition-colors"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>Sign In / Join</span>
@@ -317,33 +332,33 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
             {isLoadingComments ? (
               <div className="space-y-3 py-4">
                 {[1, 2].map((i) => (
-                  <div key={i} className="animate-pulse flex items-start gap-3 p-3 bg-warmgray-50 rounded-xl">
-                    <div className="w-8 h-8 rounded-lg bg-warmgray-200" />
+                  <div key={i} className="animate-pulse flex items-start gap-3 p-4 bg-warmgray-50 rounded-2xl">
+                    <div className="w-9 h-9 rounded-xl bg-warmgray-200" />
                     <div className="flex-1 space-y-2">
-                      <div className="h-3 bg-warmgray-200 rounded w-1/4" />
-                      <div className="h-3 bg-warmgray-200 rounded w-3/4" />
+                      <div className="h-4 bg-warmgray-200 rounded w-1/4" />
+                      <div className="h-3 bg-warmgray-100 rounded w-3/4" />
                     </div>
                   </div>
                 ))}
               </div>
             ) : comments.length === 0 ? (
-              <div className="text-center py-10 bg-warmgray-50/50 rounded-2xl border border-dashed border-warmgray-200">
-                <MessageSquare className="w-8 h-8 text-warmgray-300 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-warmgray-700">No replies yet</p>
+              <div className="text-center py-12 bg-warmgray-50/60 rounded-3xl border border-dashed border-warmgray-200">
+                <MessageSquare className="w-10 h-10 text-warmgray-300 mx-auto mb-2" />
+                <p className="text-sm font-bold text-warmgray-800">No replies yet</p>
                 <p className="text-xs text-warmgray-400 mt-1">
-                  Be the first one to leave a reply on this topic!
+                  Be the first one to share advice or feedback on this topic!
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 {comments.map((comment) => {
                   const isCommentAuthor = user && user.id === comment.user_id;
                   return (
                     <div
                       key={comment.id}
-                      className="p-3.5 sm:p-4 rounded-2xl bg-warmgray-50/70 border border-warmgray-100 hover:border-warmgray-200 transition-colors"
+                      className="p-4 sm:p-5 rounded-2xl bg-warmgray-50/80 border border-warmgray-100 hover:border-warmgray-200 transition-colors"
                     >
-                      <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center justify-between gap-2 mb-2.5">
                         <div className="flex items-center gap-2.5">
                           <img
                             src={
@@ -351,10 +366,10 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                               `https://api.dicebear.com/7.x/bottts/svg?seed=${comment.user_id}`
                             }
                             alt={comment.author?.username}
-                            className="w-7 h-7 rounded-lg object-cover bg-warmgray-200"
+                            className="w-8 h-8 rounded-xl object-cover bg-warmgray-200 ring-1 ring-warmgray-200"
                           />
                           <div>
-                            <span className="text-xs font-bold text-warmgray-900 mr-1.5">
+                            <span className="text-xs font-bold text-warmgray-900 mr-2">
                               {comment.author?.full_name || comment.author?.username}
                             </span>
                             <span className="text-[11px] text-warmgray-400">
@@ -366,7 +381,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                         {isCommentAuthor && (
                           <button
                             onClick={() => handleDeleteComment(comment.id)}
-                            className="text-warmgray-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors"
+                            className="text-warmgray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
                             title="Delete comment"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -374,7 +389,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                         )}
                       </div>
 
-                      <p className="text-sm text-warmgray-700 leading-relaxed pl-9 whitespace-pre-line">
+                      <p className="text-sm text-warmgray-700 leading-relaxed pl-10 whitespace-pre-line">
                         {comment.content}
                       </p>
                     </div>

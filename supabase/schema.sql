@@ -100,20 +100,41 @@ declare
   raw_user_meta jsonb;
   extracted_username text;
   extracted_name text;
+  base_username text;
+  final_username text;
+  counter int := 0;
 begin
   raw_user_meta := new.raw_user_meta_data;
   extracted_name := coalesce(raw_user_meta->>'full_name', raw_user_meta->>'name', split_part(new.email, '@', 1));
-  extracted_username := coalesce(raw_user_meta->>'username', split_part(new.email, '@', 1) || '_' || substr(new.id::text, 1, 4));
+  
+  -- Build a clean base username from user-supplied name or email prefix
+  base_username := coalesce(raw_user_meta->>'username', split_part(new.email, '@', 1));
+  -- Strip special characters and lowercase
+  base_username := lower(regexp_replace(base_username, '[^a-zA-Z0-9_]', '', 'g'));
+  -- Ensure minimum length
+  if length(base_username) < 3 then
+    base_username := 'hiver_' || substr(new.id::text, 1, 6);
+  end if;
+
+  -- Resolve username collisions by appending an incrementing counter
+  final_username := base_username;
+  loop
+    exit when not exists (select 1 from public.profiles where username = final_username);
+    counter := counter + 1;
+    final_username := base_username || '_' || counter::text;
+  end loop;
 
   insert into public.profiles (id, username, full_name, avatar_url, bio)
   values (
     new.id,
-    extracted_username,
+    final_username,
     extracted_name,
     coalesce(raw_user_meta->>'avatar_url', 'https://api.dicebear.com/7.x/bottts/svg?seed=' || new.id::text),
     'Hobbyist & Hive Explorer'
   )
   on conflict (id) do update set
+    username = excluded.username,
+    full_name = excluded.full_name,
     updated_at = timezone('utc'::text, now());
   return new;
 end;

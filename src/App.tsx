@@ -171,7 +171,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#fbfaf8] text-warmgray-900 selection:bg-hive-200">
+    <div className="min-h-screen flex flex-col bg-[#fbf9f4] bg-dots-pattern text-warmgray-900 selection:bg-hive-200">
       {/* Top Navigation */}
       <Navbar
         searchQuery={searchQuery}
